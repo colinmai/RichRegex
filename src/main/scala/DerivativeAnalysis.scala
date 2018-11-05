@@ -14,7 +14,7 @@ object DerivativeAnalysis {
   //----------------------------------------------------------------------------
   // Public API.
   //----------------------------------------------------------------------------
-
+//
   // Statically analyzes 're' using derivatives in order to compute the DFA of
   // the language recognized by 're'. The resulting DFA has an explicit error
   // state and is approximately minimal.
