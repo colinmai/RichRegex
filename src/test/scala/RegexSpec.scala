@@ -19,7 +19,6 @@ class RegexSpec extends FlatSpec with Matchers {
   val r = Chars('a') | Chars('b').+
   val r1 = Chars('x', 'y').* ~ r
   val r2 = Chars('y', 'x').+ ~ r
-
   //----------------------------------------------------------------------------
   // Tests.
   // ---------------------------------------------------------------------------
@@ -27,7 +26,7 @@ class RegexSpec extends FlatSpec with Matchers {
   behavior of "a regex"
 
   it should "be buildable using `~`" in {
-    (r1 ~ r2) should equal (Concatenate(r1, r2))
+    (r1 ~ r2) should equal (Chars('x', 'y').* ~ r ~ Chars('y', 'x').+ ~ r)
     // simplifications
     (r ~ ∅) should equal(∅)
     (∅ ~ r) should equal(∅)
@@ -37,7 +36,7 @@ class RegexSpec extends FlatSpec with Matchers {
 
 
   it should "be buildable using `|`" in {
-    (r1 | r2) should equal(Union(r1, r2))
+    (r1 | r2) should equal(Union(r2, r1)) // also testing normalization due to lengths of r1 and r2
     // simplifications
     (r | ∅) should equal(r)
     (∅ | r) should equal(r)
@@ -66,7 +65,7 @@ class RegexSpec extends FlatSpec with Matchers {
   }
 
   it should "be buildable using `&`" in {
-    (r1 & r2) should equal(Intersect(r1, r2))
+    (r1 & r2) should equal(Intersect(r2, r1)) // also testing normalization due to lengths of r1 and r2
     // Simplifications
     (∅ & r) should equal(∅)
     (r & ∅) should equal(∅)
@@ -78,39 +77,56 @@ class RegexSpec extends FlatSpec with Matchers {
 
   it should "be buildable using `^`" in {
     (r^5) should equal(r ~ r ~ r ~ r ~ r)
+    (b^10) should equal (b~b~b~b~b~b~b~b~b~b)
+    ((r1^2)^(3)) should equal ((r1~r1)~(r1~r1)~(r1~r1))
+    (c^0) should equal (`ε`)
   }
 
   it should "be buildable using `>=`" in {
     (r >= 3) should equal(r ~ r ~ r ~ r.*)
+    (r1 >= 4) should equal (r1 ~ r1 ~ r1 ~ r1 ~ r1.*)
+    (b >= 0) should equal (b.*)
   }
 
   it should "be buildable using `<=`" in {
     (r <= 3) should equal(ε | r | (r ~ r) | (r ~ r ~ r))
+    (r2 <= 0) should equal (`ε`)
+    (r1 <= 5) should equal (ε | r1 | (r1 ~ r1) | (r1 ~ r1 ~ r1) | (r1^4) | (r1^5))
   }
 
-  it should "be buildable using `<=>`" in {
+  it should "be buildable using `<>`" in {
     (r <>(2, 3)) should equal((r ~ r ~ r.*) & (ε | r | (r ~ r) | (r ~ r ~ r)))
+    (c <> (1, 4)) should equal ((c >= 1) & (c <= 4))
+    (r2 <> (0, 0)) should equal (`ε`)
+    (r1 <> (0, 3)) should equal (`ε` | r1 | (r1 ~ r1) | (r1 ~ r1 ~ r1))
   }
 
 
   it should "be buildable using convenience methods 1" in {
     (b ~ c) should equal (Concatenate(b, c))
+    ((Chars('c')).* | Chars('z')) should equal (Union(Chars('z'), (Chars('c').*)))
+    (Chars('b')~(Chars('c')~Chars('d') | Chars('e'))~Chars('f')) should equal (Chars('b') ~ ((Chars('e') | (Chars('c') ~ Chars('d'))) ~ Chars('f'))) 
   }
 
   it should "be buildable using convenience methods 2" in {
     (b | (b ~ c)) should equal (Union(b, Concatenate(b, c)))
+    (b ~ (c ~ r1)) should equal (Concatenate(b, (Concatenate(c, r1))))
+    (r1 | c) should equal (Union(c, r1))
   }
 
   it should "be buildable using convenience methods 3" in {
     b.* should equal (KleeneStar(b))
+    (r1 | c).* should equal (KleeneStar((Union(c, r1))))
   }
 
   it should "be buildable using convenience methods 4" in {
     !b should equal (Complement(b))
+    !(r1 | c) should equal (Complement((Union(c, r1))))
   }
 
   it should "be buildable using convenience methods 5" in {
     (b & (b ~ c)) should equal (Intersect(b, Concatenate(b, c)))
+    (b & r1) should equal (Intersect(b, r1))
   }
 
   it should "be buildable using convenience methods 6" in {
@@ -122,19 +138,19 @@ class RegexSpec extends FlatSpec with Matchers {
   }
 
   it should "be buildable using convenience methods 8" in {
-    b^3 should equal (Concatenate(Concatenate(b, b), b))
+    b^3 should equal (Concatenate(b, Concatenate(b, b)))
   }
 
   it should "be buildable using convenience methods 9" in {
-    (b >= 2) should equal (Concatenate(Concatenate(b, b), KleeneStar(b)))
+    (b >= 2) should equal (Concatenate(b, Concatenate(b, KleeneStar(b))))
   }
 
   it should "be buildable using convenience methods 10" in {
-    (b <= 2) should equal (Union(Union(ε, b), Concatenate(b, b)))
+    (b <= 2) should equal (Union(ε, Union(b, Concatenate(b, b))))
   }
 
   it should "be buildable using convenience methods 11" in {
-    (b <> (1, 3)) should equal (Intersect(Concatenate(b, KleeneStar(b)), Union(Union(Union(ε, b), Concatenate(b, b)), Concatenate(Concatenate(b, b), b))))
+    (b <> (1, 3)) should equal (Intersect(Concatenate(b, KleeneStar(b)), Union(ε, Union(b, Union(Concatenate(b, b), Concatenate(b, Concatenate(b, b)))))))
   }
 
   it should "be buildable from strings" in {
@@ -143,7 +159,15 @@ class RegexSpec extends FlatSpec with Matchers {
   }
 
   it should "pretty-print correctly" in {
-    (b.? | (c >= 1)).prettyPrint should equal (s"""Union\n├─ Union\n│  ├─ ε\n│  └─ b\n└─ Concatenate\n   ├─ c\n   └─ KleeneStar\n      └─ c\n""")
+    (b.? | (c >= 1)).prettyPrint should equal ("""Union
+                                                 |├─ ε
+                                                 |└─ Union
+                                                 |   ├─ b
+                                                 |   └─ Concatenate
+                                                 |      ├─ c
+                                                 |      └─ KleeneStar
+                                                 |         └─ c
+                                                 |""".stripMargin)
   }
 
   it should "normalize correctly 1" in {
@@ -168,11 +192,23 @@ class RegexSpec extends FlatSpec with Matchers {
 
   behavior of "nullable"
 
-  it should "recognize a nullable regex 1" in { pending }
+  it should "recognize a nullable regex 1" in { 
+    (b.*).nullable should equal (`ε`)
+    (r1.*).nullable should equal (`ε`)
+    ((b.*) ~b).nullable should equal (`∅`)
+    ((r.*) ~(r1.*) ~ (r2.*) ~ `∅`).nullable should equal (`∅`)
+    (b |c|r|(r1.*)).nullable should equal (`ε`)
+    (r2.*).nullable should equal (`ε`)
+    (b & c).nullable should equal (`∅`)
+  }
 
   // more tests...
 
-  it should "recognize a non-nullable regex 1" in { pending }
+  it should "recognize a non-nullable regex 1" in { 
+     b.nullable should equal (`∅`)
+    c.nullable should equal (`∅`)
+    r1.nullable should equal (`∅`)
+  }
 
   // more tests...
 }
