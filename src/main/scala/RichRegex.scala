@@ -4,6 +4,7 @@
 package edu.ucsb.cs.cs162.regex
 
 import edu.ucsb.cs.cs162.regex.derivative._
+import scala.language.postfixOps
 
 object `package` {
   import Regex._
@@ -22,6 +23,10 @@ object `package` {
       // right-associative, and transforms it into right-associative form. There
       // should be a default case after this one that handles anything that this
       // case and the prior simplification cases don't handle.
+      case (re, `∅`) => `∅`
+      case (`∅`, re) => `∅`
+      case (re, `ε`) => re
+      case (`ε`, re) => re
       case (_: Concatenate, _) => {
         // Replace the right-most concatenation in 're' with the concatenation
         // to 'other'.
@@ -31,11 +36,23 @@ object `package` {
         }
         replaceRight(re)
       }
+      case (re: Regex, other: Regex)  => Concatenate(re, other)
     }
 
     // Union 're' with 'other', simplifying if possible (assumes that 're' and
     // 'other' have already been simplified).
     def |(other: Regex): Regex = (re, other) match {
+      
+      // Integrated simplifications from assignment 2
+      case (re, `∅`) => re
+      case (`∅`, re) => re
+      case (Chars(chars1), Chars(chars2)) => Chars(chars1 ++ chars2)
+      case (re: KleeneStar, `ε`) => re
+      case (`ε`, other: KleeneStar) => other
+      case (KleeneStar(`α`), other) => re
+      case (re, KleeneStar(`α`)) => other
+      case (re: Regex, other: Regex) if re == other => re
+      
       // This case should come after all other cases that handle union
       // simplification. It ensures that unions are right-associative and the
       // operands are ordered correctly.
@@ -52,15 +69,36 @@ object `package` {
 
     // Apply the Kleene star to 're', simplifying if possible (assumes that 're'
     // has already been simplified).
-    def * : Regex = ???
+    def * : Regex = re match {
+      case `ε` => `ε`
+      case `∅` => `ε`
+      case re: KleeneStar => re
+      case re: Regex => KleeneStar(re)
+      case _ => throw new AssertionError("WRONG")
+    }
 
     // Complement 're', simplifying if possible (assumes that 're' has already
     // been simplified).
-    def unary_! : Regex = ???
+    def unary_! : Regex = re match {
+      case Complement(re) => re
+      case `ε` => (`α`)+
+      case `∅` => (`α`)*
+      case re: Regex => Complement(re)
+      case _ => throw new AssertionError("WRONG")
+    }
 
     // Intersect 're' with 'other', simplifying if possible (assumes that 're'
     // and 'other' have already been simplified).
     def &(other: Regex): Regex = (re, other) match {
+      
+      // Integrated simplifications from assignment 2
+      case (`∅`, other) => `∅`
+      case (re, `∅`) => `∅`
+      case (Chars(chars1), Chars(chars2)) => Chars(chars1 & chars2)
+      case (re: KleeneStar, other) => other
+      case (re, other: KleeneStar) => re
+      case (re: Regex, other: Regex) if re == other => re
+      
       // This case should come after all other cases that handle intersection
       // simplification. It ensures that intersections are right-associative and
       // the operands are ordered correctly.
@@ -76,22 +114,34 @@ object `package` {
     }
 
     // Shorthand for 1 or more repetitions of re regex.
-    def + : Regex = ???
+    def + : Regex = Concatenate(re, KleeneStar(re))
 
     // Shorthand for 0 or 1 instances of re regex.
-    def ? : Regex = ???
+    def ? : Regex = Union(`ε`, re)
 
     // Shorthand for exactly 'num' repetitions of re regex.
-    def ^(num: Int): Regex = ???
+    def ^(num: Int): Regex = {
+      assert(num >= 0)
+      if (num == 0) `ε` else (re^(num-1)) ~ re
+    }
 
     // Shorthand for at least 'min' repetitions of re regex.
-    def >=(min: Int): Regex = ???
+    def >=(min: Int): Regex = {
+      assert(min >= 0)
+      if (min == 0) re* else (re^(min)) ~ (re*)
+    }
 
     // Shorthand for at most 'max' repetitions of re regex.
-    def <=(max: Int): Regex = ???
+    def <=(max: Int): Regex = {
+      assert(max >= 0)
+      if (max == 0) `ε` else (re <= (max-1)) | (re^max)
+    }
 
     // Shorthand for at least 'min' but at most 'max' repetitions of re regex.
-    def <>(min: Int, max: Int): Regex = ???
+    def <>(min: Int, max: Int): Regex = {
+      assert(min >= 0 && max >= min)
+      if (max == 0) `ε` else (re >= min) & (re <= max)
+    }
 
     //----------------------------------------------------------------------------
     // Private details.
